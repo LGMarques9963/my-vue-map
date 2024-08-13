@@ -9,12 +9,12 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, markRaw } from 'vue';
-import { Map, NavigationControl, Marker, MapStyle } from 'maplibre-gl';
+import { Map, NavigationControl, Marker, MapStyle, MaptilerTerrainControl } from 'maplibre-gl';
 
 const mapContainer = ref(null);
 const apiKey = ref('ysmbYpTRQA8zuUSMfopO');
-const origin = ref([-122.414, 37.776]);
-const destination = ref([-77.032, 38.913]);
+const routesData = ref([]);
+
 
 const initialState = {
   lng: 139.753,
@@ -34,85 +34,106 @@ const loadTurfScript = async () => {
   });
 };
 
-    
-
-onMounted(async () => {
-  await loadTurfScript();
-
+const createMap = () => {
   map.value = new Map({
     container: mapContainer.value,
     style: `https://api.maptiler.com/maps/streets-v2/style.json?key=${apiKey.value}`,
-    center: origin.value,
-    zoom: initialState.zoom
+    center: [initialState.lng, initialState.lat],
+    zoom: initialState.zoom,
   });
 
-  const route = {
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: [origin.value, destination.value],
-        },
-      },
-    ],
-  };
-
-  
-  const lineDistance = turf.lineDistance(route.features[0], 'kilometers');
-  
-  let arc = [];
-  const steps = 500;
-  
-  for (let i = 0; i < lineDistance; i += lineDistance / steps) {
-    const segment = turf.along(route.features[0], i, 'kilometers');
-    arc.push(segment.geometry.coordinates);
-  }
-  
-  route.features[0].geometry.coordinates = arc;
-  
-  const midpoint = turf.along(route.features[0], lineDistance / 2, 'kilometers').geometry.coordinates;
-  
-  const point = {
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        properties: {},
-        geometry: {
-          type: 'Point',
-          coordinates: midpoint,
-        },
-      }
-    ],
-  };
-
-
-  map.value.on('load', function () {
+  map.value.on('load', () => {
     map.value.addControl(new NavigationControl(), 'top-left');
+  });
+};
+
+const fetchRoutes = () => {
+  const fakeRespose = {
+    "routes": [
+      {
+        "origin": [-43.1729, -22.9068],
+        "destination": [-77.032, -38.913]
+      },
+      {
+        "origin": [-122.414, 37.776],
+        "destination": [-77.032, 38.913]
+      },
+    ]
+  }
+  routesData.value = fakeRespose.routes;
+};
+
+const addRoutesToMap = () => {
+  routesData.value.forEach((route) => {
+    const origin = route.origin;
+    const destination = route.destination;
+    const r = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [origin, destination],
+          },
+        },
+      ],
+    };
+
+
+    const routeLayerID = 'route' + Math.random().toString(36).substr(2, 9);
+    const pointLayerID = 'point' + Math.random().toString(36).substr(2, 9);
+    const routeSourceID = 'routeSource' + Math.random().toString(36).substr(2, 9);
+    const pointSourceID = 'pointSource' + Math.random().toString(36).substr(2, 9);
+    const lineDistance = turf.lineDistance(r.features[0], 'kilometers');
+
+    let arc = [];
+    const steps = 500;
+
+    for (let i = 0; i < lineDistance; i += lineDistance / steps) {
+      const segment = turf.along(r.features[0], i, 'kilometers');
+      arc.push(segment.geometry.coordinates);
+    }
+
+    r.features[0].geometry.coordinates = arc;
+
+    const midpoint = turf.along(r.features[0], lineDistance / 2, 'kilometers').geometry.coordinates;
+
+    const point = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'Point',
+            coordinates: midpoint,
+          },
+        }
+      ],
+    };
+
+    new Marker()
+      .setLngLat(origin)
+      .addTo(map.value);
     
     new Marker()
-      .setLngLat(origin.value)
+      .setLngLat(destination)
       .addTo(map.value);
 
-    new Marker()
-      .setLngLat(destination.value)
-      .addTo(map.value);
-
-    map.value.addSource('route', {
+    map.value.addSource(routeSourceID, {
       type: 'geojson',
-      data: route,
+      data: r,
     });
 
-    map.value.addSource('point', {
+    map.value.addSource(pointSourceID, {
       type: 'geojson',
       data: point,
     });
 
     map.value.addLayer({
-      id: 'route',
-      source: 'route',
+      id: routeLayerID,
+      source: routeSourceID,
       type: 'line',
       paint: {
         'line-color': '#007cbf',
@@ -121,8 +142,8 @@ onMounted(async () => {
     });
 
     map.value.addLayer({
-      id: 'point',
-      source: 'point',
+      id: pointLayerID,
+      source: pointSourceID,
       type: 'symbol',
       layout: {
         'icon-image': 'airport',
@@ -132,13 +153,25 @@ onMounted(async () => {
         'icon-ignore-placement': true,
       },
     });
+
+  })
+}
+onMounted(async () => {
+  await loadTurfScript();
+  createMap();
+  map.value.on('load', () => {
+    fetchRoutes();
+    setTimeout(() => {
+      addRoutesToMap();
+    }, 500);
+    // addRoutesToMap();
   });
 }),
 
 
-onUnmounted(() => {
-  map.value?.remove();
-});
+  onUnmounted(() => {
+    map.value?.remove();
+  });
 </script>
 
 
